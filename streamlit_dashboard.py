@@ -73,7 +73,6 @@ st.markdown("""
     }
     /* Metric styling */
     .stMetric {
-        background-color: #f0f2f6;
         padding: 1rem;
         border-radius: 8px;
     }
