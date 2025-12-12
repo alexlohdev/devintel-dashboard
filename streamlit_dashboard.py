@@ -94,10 +94,10 @@ TIER_LIMITS = {
 # Exact Column Mapping (Shared for CSV/XLSX)
 COLUMN_MAPPING = {
      "project_name": "Kod Projek & Nama Projek",  
-    "no_unit": "PT/Lot/No Unit",                  
-    "harga_jualan": "Harga Jual",                 
-    "harga_spjb": "Harga SPJ",                  
-    "status_jualan": "Status Jual",               
+    "no_unit": "No PT/Lot/Plot/No Unit",                  
+    "harga_jualan": "Harga Jualan (RM)",                 
+    "harga_spjb": "Harga SPJ (RM)",                  
+    "status_jualan": "Status Jualan",               
     "kuota_bumi": "Kuota Bumi",                   
     "nama_pemaju": "Kod Pemaju & Nama Pemaju",    
     "scraped_date": "Scraped_Date"
