@@ -642,39 +642,7 @@ def main():
         ).properties(title="Unit Terjual Per Projek (By Pemaju)", width=400, height=300)
         st.altair_chart(chart_units, use_container_width=True)
 
-    with col_v2:
-    # Total Sales by Pemaju (SAFE PIE CHART WITH FALLBACK)
-    sales_by_pemaju = project_agg_filtered.groupby("pemaju")["total_sales_per_project"].sum().reset_index()
     
-    # Filter out zero/negative sales (Altair pie chart can't handle 0 values)
-    sales_by_pemaju = sales_by_pemaju[sales_by_pemaju["total_sales_per_project"] > 0]
-    
-    # Check if data is valid for pie chart
-    if len(sales_by_pemaju) == 0:
-        st.warning("⚠️ No sales data available to render pie chart (all values = 0)")
-        # Fallback: Empty chart with message
-        chart_sales = alt.Chart(pd.DataFrame({"pemaju": ["No Data"], "total_sales_per_project": [1]})).mark_text().encode(
-            text=alt.value("No Sales Data"),
-        ).properties(title="Total Sales By Pemaju", width=400, height=300)
-    elif len(sales_by_pemaju) == 1:
-        # Fallback: Bar chart for single pemaju (pie chart looks odd with 1 slice)
-        chart_sales = alt.Chart(sales_by_pemaju).mark_bar(color="#1967d2").encode(
-            x="pemaju:N",
-            y="total_sales_per_project:Q",
-            tooltip=["pemaju:N", alt.Tooltip("total_sales_per_project:Q", format=",.0f", title="Total Sales (RM)")]
-        ).properties(title="Total Sales By Pemaju (Single Pemaju)", width=400, height=300)
-    else:
-        # Valid pie chart
-        chart_sales = alt.Chart(sales_by_pemaju).mark_pie().encode(
-            theta=alt.Theta(field="total_sales_per_project", type="quantitative"),
-            color=alt.Color(field="pemaju", type="nominal"),
-            tooltip=[
-                alt.Tooltip(field="pemaju", type="nominal", title="Pemaju"),
-                alt.Tooltip(field="total_sales_per_project", type="quantitative", format=",.0f", title="Total Sales (RM)")
-            ]
-        ).properties(title="Total Sales By Pemaju", width=400, height=300)
-    
-    st.altair_chart(chart_sales, use_container_width=True)
 
     # Pro-Only Visualizations
     if current_tier == "Pro":
