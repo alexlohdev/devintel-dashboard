@@ -93,7 +93,7 @@ TIER_LIMITS = {
 
 # Exact Column Mapping (Shared for CSV/XLSX)
 COLUMN_MAPPING = {
-     "project_name": "Kod Projek & Nama Projek",  
+    "project_name": "Kod Projek & Nama Projek",  
     "no_unit": "No PT/Lot/Plot/No Unit",                  
     "harga_jualan": "Harga Jualan (RM)",                 
     "harga_spjb": "Harga SPJ (RM)",                  
@@ -254,19 +254,29 @@ def load_pemaju_data(pemaju_name, tier="Basic"):
     elif csv_df.empty and not xlsx_df.empty:
         combined_df = xlsx_df  # Only XLSX details data
     else:
-        # Merge CSV (total) with XLSX (details) on project name (adjust key if needed)
-        # Use 'project_name' or your actual project identifier column
-        merge_key = "project_name" if "project_name" in csv_df.columns and "project_name" in xlsx_df.columns else "project_sheet_name"
-        combined_df = pd.merge(
-            csv_df, xlsx_df, 
-            on=merge_key if merge_key in csv_df.columns else list(csv_df.columns)[0],
-            how="outer",
-            suffixes=("_csv", "_xlsx")
-        )
+        # FIX: Safer merge logic (avoid errors if merge key is missing)
+        merge_key = None
+        if "project_name" in csv_df.columns and "project_name" in xlsx_df.columns:
+            merge_key = "project_name"
+        elif "Kod Projek & Nama Projek" in csv_df.columns and "Kod Projek & Nama Projek" in xlsx_df.columns:
+            merge_key = "Kod Projek & Nama Projek"
+        elif "project_sheet_name" in xlsx_df.columns:
+            merge_key = "project_sheet_name"
+        
+        if merge_key:
+            combined_df = pd.merge(
+                csv_df, xlsx_df, 
+                on=merge_key,
+                how="outer",
+                suffixes=("_csv", "_xlsx")
+            )
+        else:
+            # If no merge key, just concatenate (avoid merge error)
+            combined_df = pd.concat([csv_df, xlsx_df], ignore_index=True)
         st.success(f"✅ Combined CSV + XLSX for {pemaju_name}: {len(combined_df)} rows")
     
     # --------------------------
-    # Step 4: Clean Combined Data
+    # Step 4: Clean Combined Data (FIX: Add Fallbacks for Missing Columns)
     # --------------------------
     # Add pemaju identifier (critical for multi-pemaju aggregation)
     combined_df["pemaju"] = pemaju_name
@@ -281,22 +291,41 @@ def load_pemaju_data(pemaju_name, tier="Basic"):
             mapped_columns[csv_columns_clean[csv_col_clean]] = code_col
     combined_df = combined_df.rename(columns=mapped_columns)
     
-    # Clean text columns
+    # FIX: Debug - Show columns after mapping (identify missing columns)
+    st.write(f"🔍 Columns after mapping for {pemaju_name}: {combined_df.columns.tolist()}")
+    
+    # FIX: Force create critical text columns (with defaults)
     for col in ["project_name", "nama_pemaju", "status_jualan", "kuota_bumi", "scraped_date"]:
-        if col in combined_df.columns:
+        if col not in combined_df.columns:
+            st.warning(f"⚠️ '{col}' missing for {pemaju_name} – using default value")
+            combined_df[col] = "Unknown"
+        else:
             combined_df[col] = combined_df[col].astype(str).str.strip().fillna("Unknown")
     
-    # Clean numeric columns (prevent division by zero)
-    combined_df["no_unit_num"] = pd.to_numeric(
-        combined_df.get("no_unit", pd.Series([1]*len(combined_df))), 
-        errors='coerce'
-    ).fillna(1)
-    combined_df["harga_jualan_num"] = combined_df.get(
-        "harga_jualan", pd.Series([0]*len(combined_df))
-    ).apply(parse_rm).fillna(0)
-    combined_df["harga_spjb_num"] = combined_df.get(
-        "harga_spjb", pd.Series([0]*len(combined_df))
-    ).apply(parse_rm).fillna(0)
+    # FIX: Force create numeric columns (prevent KeyError in aggregation)
+    # 1. Unit count (no_unit_num)
+    if "no_unit" in combined_df.columns:
+        combined_df["no_unit_num"] = pd.to_numeric(
+            combined_df["no_unit"], 
+            errors='coerce'
+        ).fillna(1)
+    else:
+        st.warning(f"⚠️ 'no_unit' missing for {pemaju_name} – defaulting to 1 unit per row")
+        combined_df["no_unit_num"] = 1
+    
+    # 2. Selling price (harga_jualan_num)
+    if "harga_jualan" in combined_df.columns:
+        combined_df["harga_jualan_num"] = combined_df["harga_jualan"].apply(parse_rm).fillna(0)
+    else:
+        st.warning(f"⚠️ 'harga_jualan' missing for {pemaju_name} – defaulting to RM 0")
+        combined_df["harga_jualan_num"] = 0
+    
+    # 3. SPJ price (harga_spjb_num)
+    if "harga_spjb" in combined_df.columns:
+        combined_df["harga_spjb_num"] = combined_df["harga_spjb"].apply(parse_rm).fillna(0)
+    else:
+        st.warning(f"⚠️ 'harga_spjb' missing for {pemaju_name} – defaulting to RM 0")
+        combined_df["harga_spjb_num"] = 0
     
     # Tier-specific date adjustment
     combined_df["scraped_date"] = datetime.now().strftime("%Y-%m-%d") if tier == "Pro" else (datetime.now() - timedelta(days=7)).strftime("%Y-%m-%d")
@@ -304,7 +333,7 @@ def load_pemaju_data(pemaju_name, tier="Basic"):
     return combined_df
 
 def load_aggregate_multiple_pemajus(selected_pemajus, tier="Basic"):
-    """Load and aggregate data for multiple selected pemajus"""
+    """Load and aggregate data for multiple selected pemajus (FIX: Safe Aggregation)"""
     all_dfs = []
     for pemaju in selected_pemajus:
         df = load_pemaju_data(pemaju, tier)
@@ -312,23 +341,43 @@ def load_aggregate_multiple_pemajus(selected_pemajus, tier="Basic"):
             all_dfs.append(df)
     
     if not all_dfs:
+        st.warning("⚠️ No valid data frames loaded for selected pemajus")
         return pd.DataFrame(), {}
     
     # Combine all pemajus into one dataframe
     combined_df = pd.concat(all_dfs, ignore_index=True)
     
-    # Aggregate by Project + Pemaju
-    project_agg = combined_df.groupby(["pemaju", "project_name"]).agg(
-        total_units_per_project=("no_unit_num", "sum"),
-        total_sales_per_project=("harga_jualan_num", "sum"),
-        total_sales_spjb_per_project=("harga_spjb_num", "sum"),
-        units_sold_per_project=("status_jualan", lambda x: (x.str.lower() == "telah dijual").sum()),
-        units_unsold_per_project=("status_jualan", lambda x: (x.str.lower() == "belum dijual").sum()),
-        bumi_units_per_project=("kuota_bumi", lambda x: (x.str.lower() == "ya").sum()),
-        non_bumi_units_per_project=("kuota_bumi", lambda x: (x.str.lower() == "tidak").sum()),
-        nama_pemaju=("nama_pemaju", "first"),
-        scraped_date=("scraped_date", "first")
-    ).reset_index()
+    # FIX: Debug - Show final combined columns before aggregation
+    st.write(f"🔍 Final combined columns (all pemajus): {combined_df.columns.tolist()}")
+    
+    # FIX: Safe Aggregation (try/except + fallbacks)
+    try:
+        project_agg = combined_df.groupby(["pemaju", "project_name"]).agg(
+            total_units_per_project=("no_unit_num", "sum"),
+            total_sales_per_project=("harga_jualan_num", "sum"),
+            total_sales_spjb_per_project=("harga_spjb_num", "sum"),
+            # FIX: Case-insensitive check + handle missing values
+            units_sold_per_project=("status_jualan", lambda x: (x.str.lower().isin(["telah dijual", "terjual", "sold"])).sum()),
+            units_unsold_per_project=("status_jualan", lambda x: (x.str.lower().isin(["belum dijual", "belum terjual", "unsold"])).sum()),
+            bumi_units_per_project=("kuota_bumi", lambda x: (x.str.lower().isin(["ya", "bumi", "yes"])).sum()),
+            non_bumi_units_per_project=("kuota_bumi", lambda x: (x.str.lower().isin(["tidak", "non-bumi", "no"])).sum()),
+            nama_pemaju=("nama_pemaju", lambda x: x.iloc[0] if not x.empty else "Unknown Pemaju"),
+            scraped_date=("scraped_date", lambda x: x.iloc[0] if not x.empty else datetime.now().strftime("%Y-%m-%d"))
+        ).reset_index()
+    except KeyError as e:
+        st.error(f"❌ Aggregation KeyError: {e} – using fallback aggregation")
+        # FIX: Fallback aggregation (minimal columns to avoid crash)
+        project_agg = combined_df.groupby(["pemaju", "project_name"]).agg(
+            total_units_per_project=("no_unit_num", "sum"),
+            total_sales_per_project=("harga_jualan_num", "sum"),
+            total_sales_spjb_per_project=("harga_spjb_num", "sum"),
+            units_sold_per_project=lambda x: 0,
+            units_unsold_per_project=lambda x: x["no_unit_num"].sum(),
+            bumi_units_per_project=lambda x: 0,
+            non_bumi_units_per_project=lambda x: x["no_unit_num"].sum(),
+            nama_pemaju=lambda x: "Unknown Pemaju",
+            scraped_date=lambda x: datetime.now().strftime("%Y-%m-%d")
+        ).reset_index()
     
     # Add Pro-only metrics (prevent division by zero)
     if tier == "Pro":
@@ -350,7 +399,7 @@ def load_aggregate_multiple_pemajus(selected_pemajus, tier="Basic"):
         "total_units_unsold": project_agg["units_unsold_per_project"].sum(),
         "total_bumi_units": project_agg["bumi_units_per_project"].sum(),
         "total_non_bumi_units": project_agg["non_bumi_units_per_project"].sum(),
-        "scraped_date": project_agg["scraped_date"].iloc[0] if not project_agg.empty else "N/A"
+        "scraped_date": project_agg["scraped_date"].iloc[0] if not project_agg.empty else datetime.now().strftime("%Y-%m-%d")
     }
     
     return project_agg, overall_metrics
